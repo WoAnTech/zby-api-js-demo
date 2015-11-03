@@ -1,0 +1,671 @@
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <title>直播云开发者测试页面</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="bootstrap/css/bootstrap.min.css" rel="stylesheet" media="screen">
+    <link href="bootstrap/css/bootstrap-responsive.min.css" rel="stylesheet">
+    <script src="javascripts/jquery.js" type="text/javascript"></script>
+    <script src="bootstrap/js/bootstrap.min.js"></script>
+    <script type="text/javascript" src="javascripts/swfobject.js"></script>
+    <script type="text/javascript" src="javascripts/recorder.js"></script>
+    <script type="text/javascript" src="javascripts/main4recorder.js"></script>
+    <script type="text/javascript" src="javascripts/hmac-sha256.js"></script>
+
+    <style>
+      .hero-unit {
+        padding: 15px;
+        top-padding: 15px;
+      }
+      select {
+        width: 100px;
+      }
+      input {
+        width: 100px;
+      }
+      .form-horizontal .control-group {
+        margin-bottom: 5px;
+      }
+      .form-horizontal .controls {
+        margin-left: 100px;
+        width: 100px;
+      }
+      .form-horizontal .control-label { 
+        width: 90px;
+      }
+
+      h1 a { color: red; text-decoration: none; }
+      .container {
+        margin: 10px ;
+        background-color: #f4f4f4;
+        padding-top: 25px;
+        padding: 20px;
+        font-family: sans-serif;
+        border-radius: 22px;
+      }
+      .control_panel {
+        white-space: nowrap;
+        padding: 0;
+        margin: 2px;
+        vertical-align: middle;
+        height: 24px;
+        background-color: #e7e7e7;
+        position: relative;
+      }
+      .control_panel a { outline: none; display: inline-block; width: 24px; height: 24px; text-decoration: none; }
+      .control_panel a img { border: 0; padding: 0; margin: 0;}
+      .control_panel .level {
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        background: linear-gradient(to right, #8bb300 0%, #3b9d00 100%);
+      }
+      .details { font-size: 12px; }
+      #save_button { padding: 0; margin: 0; }
+      .play_button { display: inline-block; }
+      .pause_button { display: inline-block; }
+      .mic_config ul, .mic_config li { list-style: none; margin: 0; padding: 0; font-size: 12px}
+
+      .scroll {
+        width: 95%;                                      /*宽度*/
+        color: ;                                        /*颜色*/
+        font-family: ;                                  /*字体*/
+        padding-left: 10px;                              /*层内左边距*/
+        padding-right: 10px;                            /*层内右边距*/
+        padding-top: 10px;                              /*层内上边距*/
+        padding-bottom: 10px;                            /*层内下边距*/
+        overflow-x: auto;                              /*横向滚动条(scroll:始终出现;auto:必要时出现;具体参考CSS文档)*/
+        overflow-y: auto;                              /*竖向滚动条*/
+
+        scrollbar-face-color: #D4D4D4;                  /*滚动条滑块颜色*/
+        scrollbar-hightlight-color: #ffffff;                /*滚动条3D界面的亮边颜色*/
+        scrollbar-shadow-color: #919192;                    /*滚动条3D界面的暗边颜色*/
+        scrollbar-3dlight-color: #ffffff;                /*滚动条亮边框颜色*/
+        scrollbar-arrow-color: #919192;                  /*箭头颜色*/
+        scrollbar-track-color: #ffffff;                  /*滚动条底色*/
+        scrollbar-darkshadow-color: #ffffff;                /*滚动条暗边框颜色*/
+      }
+    </style>
+
+    <script type="text/javascript">
+      var SERVICE_CODE="";
+      var API_KEY="";
+      var iplayer = null;
+      var player_style = null;
+      var BASE_URL = 'http://c.zhiboyun.com';
+      (function($){
+        $.getUrlParam = function(name)
+        {
+          var reg = new RegExp("(^|&)"+ name +"=([^&]*)(&|$)");
+          var r = window.location.search.substr(1).match(reg);
+          if (r!=null) return unescape(r[2]); return null;
+        }
+      })(jQuery);
+
+      var is_console= "true" == $.getUrlParam('console');
+      var is_ios = /(iPhone|iPod|iPad).*AppleWebKit.*Safari/i.test(navigator.userAgent);
+
+      $(function() {
+        var gain = $('#gain')[0];
+        var silenceLevel = $('#silenceLevel')[0];
+        for(var i=0; i<=100; i++) {
+          gain.options[gain.options.length] = new Option(100-i);
+          silenceLevel.options[silenceLevel.options.length] = new Option(i);
+        }
+
+        var appWidth = 24;
+        var appHeight = 24;
+        var flashvars = {'upload_image': 'images/record.png'};
+        var params = {};
+        var attributes = {'id': "recorderApp", 'name':  "recorderApp"};
+        swfobject.embedSWF("swf/recorder.swf", "flashcontent", appWidth, appHeight, "11.0.0", "", flashvars, params, attributes);
+      });
+
+      /*
+      * 配置麦克风的采集参数
+      */
+      function configureMicrophone() {
+        if(! FWRecorder.isReady) {
+          return;
+        }
+
+        FWRecorder.configure($('#rate').val(), $('#gain').val(), $('#silenceLevel').val(), $('#silenceTimeout').val());
+        FWRecorder.setUseEchoSuppression($('#useEchoSuppression').is(":checked"));
+        FWRecorder.setLoopBack($('#loopBack').is(":checked"));
+      }
+
+      function startAudioRecord() {
+        FWRecorder.observeLevel();
+        FWRecorder.record('audio', 'audio.wav')
+      }
+
+      function make_signature(uri, query_string, now, key) {
+        var data = uri + query_string + now;
+        //console.log("string: " + data);
+        return CryptoJS.HmacSHA256(data, key);
+      }
+
+      function call_api(api, param_str, on_success) {
+        var uri = '/api/20140928/' + api;
+        var now = new Date().getTime();
+        var signature = make_signature(uri, param_str, now, API_KEY);
+        uri = BASE_URL + uri;
+        $.ajax({
+          type: "GET",
+          url: uri + (param_str? "?" : "") + param_str,
+          headers: {"xvs-timestamp" : now, "xvs-signature": signature},
+          dataType: "json",
+          crossDomain: true,
+          success: on_success ? on_success:on_task_list_update,
+          error: function(err, exception) {
+            console.log('调用API失败, 错误信息: ' + JSON.stringify(err));
+          }
+        });
+      }
+
+      function play(live_url, width, height) {
+        console.log(live_url);
+        if (player_style == null) {
+          player_style = $("#player").attr("style");
+        }
+        if (is_ios) {
+          player_style = "display: block; width: 280; height: 210px"
+        }
+        if (live_url) {
+          $("#player").attr('href', live_url);
+        }
+
+        if (isSafari() && /\.m3u8/.test(live_url)) {
+          if (live_url == null) {
+            iplayer = null;
+            $("#player").replaceWith('<video id="player" autoplay controls style="' + player_style + '"></video>');
+          } else {
+            $("#player").replaceWith('<video id="player" autoplay controls style="' + player_style + '"></video>');
+            iplayer = null;
+            $("#player").attr('src', live_url);
+            $("#player").load();
+            $("#player").play();
+          }
+        } else if (null == live_url || /^rtmp:/.test(live_url) || /\.flv$/.test(live_url) || /\.m3u8/.test(live_url)) {
+          if (live_url && detectFlashInstalled()) {
+            swfobject.embedSWF(
+              "swf/woan_wmp.swf" ,
+              "player" ,
+              width, 
+              height,
+              "10.1.0" ,
+              "swf/expressInstall.swf", 
+              {
+                src: live_url,
+                autoPlay: true,
+                verbose: true,
+                liveBufferTime: 9,
+                poster: "images/poster.png",
+                controlBarAutoHide: "true",
+                controlBarPosition: "bottom",
+                plugin_hls: "swf/wmp_plugin_hls.swf"
+              } ,
+              {
+                allowFullScreen: "true",
+                wmode: 'opaque' 
+              } ,
+              {
+                name: "woan_wmp"
+              }
+            );
+          }
+        }
+      }
+
+      function cancel_task(task_id) {
+        console.log('cance:' + task_id);
+        var param_str = 'service_code='+SERVICE_CODE+'&task_id='+task_id;
+        call_api('cancel_task', param_str, function(res) {
+          alert('取消任务执行结果:' + res.ret);
+        });
+      }
+
+      function isSafari() {
+        return Object.prototype.toString.call(window.HTMLElement).indexOf('Constructor') > 0;
+      }
+
+      function detectFlashInstalled() {
+        var hasFlash = false;
+        try {
+          var fo = new ActiveXObject('ShockwaveFlash.ShockwaveFlash');
+          if (fo) {
+            hasFlash = true;
+          }
+        } catch (e) {
+          if (navigator.mimeTypes
+            && navigator.mimeTypes['application/x-shockwave-flash'] != undefined
+          && navigator.mimeTypes['application/x-shockwave-flash'].enabledPlugin) {
+            hasFlash = true;
+          }
+        }
+        return hasFlash;
+      }
+
+      /**
+      * 时间对象的格式化;
+      */
+      Date.prototype.format = function(format) {
+        /*
+        * eg:format="yyyy-MM-dd hh:mm:ss";
+        */
+        var o = {
+          "M+" : this.getMonth() + 1, // month
+          "d+" : this.getDate(), // day
+          "h+" : this.getHours(), // hour
+          "m+" : this.getMinutes(), // minute
+          "s+" : this.getSeconds(), // second
+          "q+" : Math.floor((this.getMonth() + 3) / 3), // quarter
+          "S" : this.getMilliseconds()
+          // millisecond
+        }
+
+        if (/(y+)/.test(format)) {
+          format = format.replace(RegExp.$1, (this.getFullYear() + "").substr(4
+          - RegExp.$1.length));
+        }
+
+        for (var k in o) {
+          if (new RegExp("(" + k + ")").test(format)) {
+            format = format.replace(RegExp.$1, RegExp.$1.length == 1
+              ? o[k]
+              : ("00" + o[k]).substr(("" + o[k]).length));
+          }
+        }
+        return format;
+      }
+
+      /*
+      * 根据task_list接口返回的数据更新WEB ui并播放
+      */
+      function on_task_list_update(data) {
+        if (parseInt(data.ret)) {
+          $('#config_model').modal();
+          console.log('获取直播列表失败 ret=' + data.ret);
+          return;
+        }
+        $('#list').empty();
+        if (0 == data.task_list.length) {
+          $('#list-block').addClass('hide');
+          if (iplayer) {
+            $("#player").attr('href', '');
+            iplayer.stop();
+          }    
+        }
+        for (var i = 0; i < data.task_list.length; i++) {
+          var play_uri = null;
+          var task = data.task_list[i];
+          var cancel_button_txt = '';
+          if (is_console) {
+            var cancel_button_txt = '<button class="cancel btn btn-danger" data="' + task.id + '" >停止</button>';
+          }
+          var progress = '直播';
+          if (task.progress > 0) {
+            progress = '进度' + (task.progress * 100).toFixed(0) + '%';
+          }
+          if (is_ios) {
+            progress = '';
+          }
+          var tr = '<tr><td>输入'+ (task.sequence+1) + '</td><td>' + task.service_code+ '</td><td>'+ progress +'</td><td>' + task.input_bytes + 
+            '</td><td>'+cancel_button_txt+'</td></tr>';
+          for (var j = 0; j < task.outputs.length; j++) {
+            var output = task.outputs[j];
+            if (null == output) {
+              continue;
+            }
+            var play_btn = '<button  class="play btn btn-primary"  data-url="' + output.live_url + '" data-width="'+output.width+'" data-height="'+output.height+'">播放</button>';
+            if (detectFlashInstalled()) {
+              switch(output.format) {
+                case 'flv':
+                case 'rtmp':
+                case 'm3u8':
+                  break;
+                default:
+                  play_btn = '';
+              }
+            } else if (is_ios || isSafari()) {
+              if ('m3u8' != output.format) {
+                play_btn = '';
+              }
+            } else {
+              play_btn = ''; 
+            }
+            tr += '<tr><td></td><td>输出'+(j+1)+' </td><td> ' + output.format + '</td><td>'+play_btn+'</td><td td class="hidden-phone">' + output.width + 'x' + output.height + '</td><td class="hidden-phone">' + output.file_name + '</td></tr>';
+          }
+          if (play_uri && i == 0 && $("#player").attr('href') == "" ) {
+            play(play_uri);
+          }
+          $('#list').append($(tr)); 
+        }
+
+        $('button.play').click(function() {
+          play($(this).attr('data-url'), $(this).attr('data-width'), $(this).attr('data-height'));
+        });
+
+        $('button.cancel').click(function() {
+          cancel_task($(this).attr('data'));
+        });
+
+        if (data.user_list.length >0) {
+          $('#select_user_tip').text("请从下面列表中选择接收消息的用户:");
+        }
+
+        var dst_user_array = [];
+        var fresh_user_array = [];
+        $('.dst_user_name').each(function(idx, ele) {
+          dst_user_array.push($(this).attr('data-user_name'));
+        });
+        for (item in data.user_list) {
+          fresh_user_array.push(data.user_list[item].user_name);
+          if (-1 == $.inArray(data.user_list[item].user_name, dst_user_array)) {
+            $("#online_user_list").append('<lable> <input name="dst_user_name" class="dst_user_name" type="radio" onclick="onDstUserChange();" data-user_name="' + data.user_list[item].user_name + '" data-service_code="' + data.user_list[item].service_code + '" data-vs_id="' + data.user_list[item].vs_id + '" ></input>' + data.user_list[item].user_name + '</label>');
+          }
+        }
+
+        $(".dst_user_name").each(function(idx,ele) {
+          if (-1 == $.inArray($(this).attr('data-user_name'), fresh_user_array)) {
+            $(this).parent().remove();
+          }
+        });
+
+        if (0 == data.user_list.length) {
+          $('#select_user_tip').text("当前无在线用户,无法发送语音消息");
+        }
+      }
+
+      function query_task_list(on_success) {
+        if (SERVICE_CODE == null || API_KEY == null) {
+          $('#config_model').modal();
+          setTimeout(query_task_list, 2000);
+          return;
+        }
+        var query_string = 'service_code='+SERVICE_CODE;
+        call_api("task_list", query_string, on_success);
+        setTimeout(query_task_list, 1000);
+      }
+
+      $(document).ready(function() {
+        play(null);
+        query_task_list(on_task_list_update);
+
+        if (!detectFlashInstalled() || !is_console) {
+          $('#send_audio_control').hide();
+        }
+
+        $("#btn_save_config").click(function() {
+          SERVICE_CODE = $('#service_code').val();
+          API_KEY = $('#secret_key').val();
+        });
+
+
+        $("#btn_create_task_with_conf").click(function(on_success) {
+          //因为GET方法不能传递回车符，如果有回车符，会导致认证不通过，因为服务器收到的串中没有回车
+          var task_xml = $('#task_xml_text').val().replace(/\n/g, '');
+          var query_string = 'service_code='+SERVICE_CODE + "&config=" + task_xml;
+          call_api('create_task_with_conf', query_string, function(res) {
+            if (res.ret) {
+              alert('创建任务失败, 返回码: ' + res.ret + " 错误信息:" + res.msg);
+            }
+          });
+        });
+
+        $("#btn_send_msg").click(function() {
+          var uri = "/api/20140928/send_txt_msg";
+          var val =  $("#txt_dst_user_name").val();
+          var query_str = 'service_code='+ SERVICE_CODE;
+          if (val) {
+            query_str += "&dst_username=" + val;
+          } else {
+            alert('请输入接收消息的用户名');
+            return;
+          }
+          var val =  $("#txt_message").val();
+          if (val) {
+            query_str += "&message=" + val;
+          } else {
+            alert('请输入要发送的消息内容');
+            return;
+          }
+          var val =  $("#txt_sender").val();
+          if (val) {
+            query_str += "&from_username=" + val;
+          } else {
+            alert('请输入发送用户名');
+            return;
+          }
+
+          var val =  $("#txt_dst_service_code").val();
+          if (val && val != SERVICE_CODE) {
+            query_str += "&dst_service_code=" + val;
+          }
+          var now = new Date().getTime().toString();
+          var signature = make_signature(uri, query_str, now, API_KEY).toString();
+
+          $.ajax({
+            type: "GET",
+            url: BASE_URL +uri+'?'+query_str,
+            headers: {"xvs-timestamp" : now, "xvs-signature": signature},
+            dataType: "json",
+            crossDomain: true,
+            success: function(data) {
+              alert('send message ok, ret: ' + JSON.stringify(data));
+            }
+          });
+        });
+
+        $("#btn_task_list_json").click(function() {
+          query_task_list(function(data) {
+            $('#task_list_json').text(JSON.stringify(data));
+            $('#task_list_json_modal').modal();
+          });
+        });
+
+      });
+
+      /*
+      * 由main4record.js中recording_stopped事件回调
+      */
+      function onDstUserChange() {
+        var uri = "/api/20140928/send_audio_msg";
+        var query_string = "";
+        var dst_user_name = '';
+        var dst_service_code = '';
+        var vs_id = ''
+        $('.dst_user_name').each(function() {
+          if ($(this).prop('checked')) {
+            dst_user_name = $(this).attr('data-user_name');
+            vs_id = $(this).attr('data-vs_id');
+            dst_service_code = $(this).attr('data-service_code');
+          }
+        });
+        var action_url = "";
+        var signature = null;
+        var now = null;
+        if ('' == dst_user_name) {
+          action_url = '';
+        } else {
+          query_string += "dst_username=" + dst_user_name + "&vs_id=" + vs_id + "&service_code="+SERVICE_CODE;
+          if (dst_service_code != SERVICE_CODE) {
+            query_string += "&dst_service_code="+dst_service_code;
+          }
+          now = new Date().getTime().toString();
+          signature = make_signature(uri, query_string, now, API_KEY).toString();
+          action_url = uri + "?" + query_string;
+        } 
+        FWRecorder.recorder.init(BASE_URL + action_url, "upload_file[filename]", $("#uploadForm").serializeArray(), signature, now);
+      }
+    </script>
+  </head>
+  <body>
+    <div id="config_model" class="modal hide fade" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+      <div class="modal-header">
+        <h3 id="myModalLabel">设置认证信息</h3>
+      </div>
+      <div class="modal-body">
+        <p>请在这里配置服务码和对应的认证密钥，否则无法调用直播云API</p>
+        <form class="form-horizontal">
+          <div class="control-group">
+            <label class="control-label" for="service_code">服务码</label>
+            <div class="controls">
+              <input type="text" id="service_code" placeholder="service_code">
+            </div>
+          </div>
+          <div class="control-group">
+            <label class="control-label" for="secret_key">认证密钥</label>
+            <div class="controls">
+              <input type="text" id="secret_key" placeholder="secret_key">
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" data-dismiss="modal" aria-hidden="true">关闭</button>
+        <button class="btn btn-primary" aria-hidden="true" data-dismiss="modal" id="btn_save_config">保存</button>
+      </div>
+    </div>
+
+    <div id="task_list_json_modal" class="modal hide fade" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+      <div class="modal-header">
+        <h3 id="myModalLabel">云API返回的任务列表JSON数据</h3>
+      </div>
+      <div class="modal-body">
+        <p id="task_list_json"></p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" data-dismiss="modal" aria-hidden="true">关闭</button>
+      </div>
+    </div>
+
+    <div class="container-fluid" style="clear: both; width: 100%;" align="center">
+      <h1>直播云API演示网页</h1>
+      <div>
+        <a href="https://github.com/WoAnTech/zby-api-js-demo">本演示的代码仓库</a> | <a href="http://www.zhiboyun.com">直播云网站</a> | <a href="http://www.zhiboyun.com/zh/document/api">文档中心</a>
+      </div>
+      <div id="player">
+      </div>
+      <div class="scroll" style="clear: both;margin-top: 10px;">
+        <table id="list" class="table table-hover" style="width: 100%; visibiliy: show;"  >
+        </table>
+      </div>
+
+      <div class="hidden-phone">
+        <button class="btn btn-info" id="btn_task_list_json">查看云API(task_list)返回的JSON </button>
+        
+        <hr/>
+
+        <h4>创建拉流任务</h4>
+        <form accept-charset="UTF-8" class="form-horizental" >
+          <label>任务描述XML</label><textarea id="task_xml_text" class="form-control" rows="5" style="margin: 0px 0px 10px; width: 70% ; height: 226px;" ></textarea>
+          <div><input type="button" class="btn btn-primary" id="btn_create_task_with_conf" value="创建任务"></div>
+        </form>
+
+        <hr/>
+        <h4>发送文本消息</h4>
+        接收消息的用户名: <input type="text" value="" id="txt_dst_user_name"></input> &nbsp;&nbsp;
+        接收消息的用户名所属服务码: <input type="text" value="" id="txt_dst_service_code"></input> &nbsp;&nbsp;
+        发送消息的用户名(可选): <input type="text" id="txt_sender" value="admin"></input> <br/>
+        <label> 消息内容:</label>
+        <textarea id="txt_message" placeholder="输入要发送的字符串" style="clear: both; width: 50%; "></textarea>
+        <div>
+          <input type="button" id="btn_send_msg" class="btn btn-primary" value="发送消息">
+        </div>
+      </div>
+    </div>
+
+    <div id="" class="container hidden-phone" style="clear: both; width: 50%; visibility:hidden; " align="center">
+      <h4>发送语音</h4>
+      <div>
+        <p id="select_user_tip" style="font-size: 12px;">请从以下列表选择接收语音消息的用户: </p>
+        <form id="online_user_list">
+        </form>
+      </div>
+      <div class="control_panel audio">
+        <span id="save_button">
+          <span id="flashcontent" >
+          </span>
+        </span>
+        <a class="play_button" style="display:none;" onclick="FWRecorder.playBack('audio');" href="javascript:void(0);" title="Play">
+          <img src="images/play.png" width="24" height="24" alt="Play"/>
+        </a>
+        <a class="pause_button" style="display:none;" onclick="FWRecorder.pausePlayBack('audio');" href="javascript:void(0);" title="Pause">
+          <img src="images/pause.png" width="24" height="24" alt="Pause"/>
+        </a>
+        <div class="level"></div>
+      </div>
+
+      <div class="details">
+        <button class="hide_level" onclick="FWRecorder.stopObservingLevel();" style="display: none;">Hide Level</button>
+        <div id="status">
+          录制状态...
+        </div>
+        <div>时长: <span id="duration"></span></div>
+        <div>活动水平: <span id="activity_level"></span></div>
+        <div>发送状态: <span id="upload_status"></span></div>
+      </div>
+
+      <form id="uploadForm" name="uploadForm" action=''>
+        <input name="authenticity_token" value="xxxxx" type="hidden">
+        <input name="upload_file[parent_id]" value="1" type="hidden">
+        <input name="format" value="json" type="hidden">
+      </form>
+
+
+      <h4>配置麦克风</h4>
+      <form class="form-horizontal" style="align:left;" onsubmit="return false;">
+        <div class="control-group">
+          <label for="rate" class="control-label">采样率</label>
+          <div class="controls">
+            <select id="rate" name="rate">
+              <option value="44" selected>44,100 Hz</option>
+              <option value="22">22,050 Hz</option>
+              <option value="11">11,025 Hz</option>
+              <option value="8">8,000 Hz</option>
+              <option value="5">5,512 Hz</option>
+            </select>
+          </div> 
+        </div>
+
+        <div class="control-group">
+          <label for="gain" class="control-label">音量增益</label>
+          <div class="controls">
+            <select id="gain" name="gain">
+            </select>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label for="silenceLevel" class="control-label">静音侦测级别</label>
+          <div class="controls">
+            <select id="silenceLevel" name="silenceLevel"> </select>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label for="silenceTimeout" class="control-label">静音超时 </label>
+          <div class="controls">
+            <input id="silenceTimeout" name="silenceTimeout" value="2000"/>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label for="useEchoSuppression" class="control-label">启用回声抑制</label>
+          <div class="controls">
+            <input id="useEchoSuppression" name="useEchoSuppression" type="checkbox"/>
+          </div> 
+        </div>
+
+        <div class="control-group">
+          <div class="controls">
+            <button onclick="configureMicrophone();" class="btn btn-primary">提交配置</button>
+          </div>
+        </div>
+      </form>
+    </div> 
+
+  </body>
+</html>
