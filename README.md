@@ -1,5 +1,7 @@
 # 直播云API调用示例
 
+>>>>> 此demo网页只兼容chrome和firefox浏览器
+
 本仓库中的index.html演示了如何通过Javascript来调用直播云提供的api, 演示页面调用的api有如下 
 
   - 访问api时对请求进行签名的方法
