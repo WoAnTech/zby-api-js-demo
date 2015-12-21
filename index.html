@@ -251,7 +251,7 @@
         });
       }
 
-      function play(live_url, width, height) {
+      function play(live_url, width, height, realmode) {
         console.log(live_url);
         if (player_style == null) {
           player_style = $("#player").attr("style");
@@ -286,7 +286,7 @@
                 controlBarPosition: "bottom",
                 plugin_hls: "swf/wmp_plugin_hls.swf"
               };
-            if (/^rtmp:/.test(live_url) || /\.flv$/.test(live_url)) {
+            if (realmode) {
                parameters = setRealMode(parameters);
             }
             swfobject.embedSWF(
@@ -413,7 +413,11 @@
             if (detectFlashInstalled()) {
               switch(output.format) {
                 case 'flv':
+                  break;
                 case 'rtmp':
+                  real_play_btn = play_btn.replace(/>播放/, 'real-mode="1">实时播放');;
+                  play_btn += "&nbsp;" + real_play_btn;
+                  break;
                 case 'm3u8':
                   break;
                 default:
@@ -426,7 +430,8 @@
             } else {
               play_btn = ''; 
             }
-            tr += '<tr><td></td><td>输出'+(j+1)+' </td><td> ' + output.format + '</td><td>'+play_btn+'</td><td td class="hidden-phone">' + output.width + 'x' + output.height + '</td><td class="hidden-phone">' + output.file_name + '</td></tr>';
+	          var show_url_btn = '<button id="btn_show_live_url" class="btn btn-info" onclick="showInfo(this);" url="' + output.live_url + '">查看直播地址</button>';
+            tr += '<tr><td></td><td>输出'+(j+1)+' </td><td> ' + output.format + '</td><td>'+play_btn+'</td><td td class="hidden-phone">'+show_url_btn+'</td><td td class="hidden-phone">' + output.width + 'x' + output.height + '</td><td class="hidden-phone">' + output.file_name + '</td></tr>';
           }
           if (play_uri && i == 0 && $("#player").attr('href') == "" ) {
             play(play_uri);
@@ -435,7 +440,7 @@
         }
 
         $('button.play').click(function() {
-          play($(this).attr('data-url'), $(this).attr('data-width'), $(this).attr('data-height'));
+          play($(this).attr('data-url'), $(this).attr('data-width'), $(this).attr('data-height'), $(this).attr('real-mode'));
         });
 
         $('button.cancel').click(function() {
@@ -478,6 +483,20 @@
         var query_string = 'service_code='+SERVICE_CODE;
         call_api("task_list", query_string, on_success);
         setTimeout(query_task_list, 1000);
+      }
+
+      function showInfo(elem) {
+        if (elem.id == 'btn_task_list_json') {
+          query_task_list(function(data) {
+            $('#modal-info-label').text('云API返回的任务列表JSON数据');
+            $('#modal-info-text').text(JSON.stringify(data));
+            $('#modal-info').modal();
+          });
+        } else if (elem.id == 'btn_show_live_url') {
+          $('#modal-info-label').text('直播地址');
+          $('#modal-info-text').text(elem.getAttribute('url'));
+          $('#modal-info').modal();
+        }
       }
 
       $(document).ready(function() {
@@ -549,14 +568,9 @@
           });
         });
 
-        $("#btn_task_list_json").click(function() {
-          query_task_list(function(data) {
-            $('#task_list_json').text(JSON.stringify(data));
-            $('#task_list_json_modal').modal();
-          });
-        });
-
+       
       });
+
 
       /*
       * 由main4record.js中recording_stopped事件回调
@@ -620,12 +634,12 @@
       </div>
     </div>
 
-    <div id="task_list_json_modal" class="modal hide fade" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+    <div id="modal-info" class="modal hide fade" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
       <div class="modal-header">
-        <h3 id="myModalLabel">云API返回的任务列表JSON数据</h3>
+        <h3 id="modal-info-label"></h3>
       </div>
       <div class="modal-body">
-        <p id="task_list_json"></p>
+        <p id="modal-info-text" style="overflow-x: hidden; width: 100%; word-wrap: break-word;"></p>
       </div>
       <div class="modal-footer">
         <button class="btn" data-dismiss="modal" aria-hidden="true">关闭</button>
@@ -645,7 +659,7 @@
       </div>
 
       <div class="hidden-phone">
-        <button class="btn btn-info" id="btn_task_list_json">查看云API(task_list)返回的JSON </button>
+        <button class="btn btn-info" id="btn_task_list_json" onclick="showInfo(this);">查看云API(task_list)返回的JSON </button>
         
         <hr/>
 
