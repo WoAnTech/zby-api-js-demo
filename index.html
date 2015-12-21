@@ -101,7 +101,7 @@
         parameters.liveBufferTime = 0;  // buffer time for live content
         parameters.streamType = 'live';
         parameters.javascriptCallbackFunction = onPlayerEvent;
-	return parameters;
+	      return parameters;
       }
 
       var originTime = null;    // system time for the media time zero
@@ -181,6 +181,16 @@
       var iplayer = null;
       var player_style = null;
       var BASE_URL = 'http://c.zhiboyun.com';
+
+      var native_m3u8_support = false;
+      if (/(iPhone|iPod|iPad).*AppleWebKit.*Safari/i.test(navigator.userAgent)) {
+         native_m3u8_support = true;
+      } else if (/Android [3-9]\./i.test(navigator.userAgent)) {
+         native_m3u8_support = true;
+      } if (isSafari()) {
+         native_m3u8_support = true;
+      }
+
       (function($){
         $.getUrlParam = function(name)
         {
@@ -191,7 +201,7 @@
       })(jQuery);
 
       var is_console= "true" == $.getUrlParam('console');
-      var is_ios = /(iPhone|iPod|iPad).*AppleWebKit.*Safari/i.test(navigator.userAgent);
+      
 
       $(function() {
         var gain = $('#gain')[0];
@@ -256,14 +266,14 @@
         if (player_style == null) {
           player_style = $("#player").attr("style");
         }
-        if (is_ios) {
+        if (native_m3u8_support) {
           player_style = "display: block; width: 280; height: 210px"
         }
         if (live_url) {
           $("#player").attr('href', live_url);
         }
 
-        if (isSafari() && /\.m3u8/.test(live_url)) {
+        if (native_m3u8_support && /\.m3u8/.test(live_url)) {
           if (live_url == null) {
             iplayer = null;
             $("#player").replaceWith('<video id="player" autoplay controls style="' + player_style + '"></video>');
@@ -399,7 +409,7 @@
           if (task.progress > 0) {
             progress = '进度' + (task.progress * 100).toFixed(0) + '%';
           }
-          if (is_ios) {
+          if (native_m3u8_support) {
             progress = '';
           }
           var tr = '<tr><td>输入'+ (task.sequence+1) + '</td><td>' + task.service_code+ '</td><td>'+ progress +'</td><td>' + task.input_bytes + 
@@ -423,7 +433,7 @@
                 default:
                   play_btn = '';
               }
-            } else if (is_ios || isSafari()) {
+            } else if (native_m3u8_support) {
               if ('m3u8' != output.format) {
                 play_btn = '';
               }
