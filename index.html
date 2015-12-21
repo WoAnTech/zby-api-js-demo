@@ -88,6 +88,93 @@
       }
     </style>
 
+    <script>
+      function setRealMode(parameters) {
+        console.log("--- real mode ---");
+        // maximum allowed delay of live streaming
+        var delayTolerance = 300;  // milliseconds
+        // reconnect when the client doesn't receive any frame for this milliseconds
+        var mediaTimeout = 2000;  // milliseconds
+        parameters.initialBufferTime = 0;  // buffer to fill before play begins
+        parameters.expandedBufferTime = delayTolerance / 500;  // maximum buffer size
+        parameters.minContinuousPlayback = 0;  // minimum playback time without pausing
+        parameters.liveBufferTime = 0;  // buffer time for live content
+        parameters.streamType = 'live';
+        parameters.javascriptCallbackFunction = onPlayerEvent;
+	return parameters;
+      }
+
+      var originTime = null;    // system time for the media time zero
+      var timeoutTimer = null;  // timeout id
+
+      // called when a player event happened
+      function onPlayerEvent(playerId, eventName, eventObj) {
+        var player = null;        // Player object (element)
+        // grab the player object
+        if (player === null) {
+          player = document.getElementById(playerId);
+        }
+
+        if (eventName === 'timeupdate') {  // time information
+          if (isNaN(eventObj.currentTime)) {
+            // ignore NaN
+            return;
+          }
+          if (eventObj.currentTime === 0) {
+            // ignore time zero
+            return;
+          }
+          var currentMediaTime = eventObj.currentTime * 1000;
+          var now = new Date().getTime();
+          if (originTime === null) {
+            originTime = now - currentMediaTime;
+          }
+          // calculate the media time from originTime
+          var projectedMediaTime = now - originTime;
+          var mediaTimeDiff = projectedMediaTime - currentMediaTime;
+          if (mediaTimeDiff > delayTolerance) {  // the delay exceeds tolerance
+            // reload the stream
+            player.pause();
+            player.play2();
+          } else if (mediaTimeDiff < 0) {  // originTime was late
+            // update originTime
+            originTime = now - currentMediaTime;
+          }
+          scheduleMediaTimeout();
+        } else if (eventName === 'play') {  // play has begun
+          cancelMediaTimeout();
+          // reset originTime
+          originTime = null;
+        }
+      }
+      // cancel the media timeout
+      function cancelMediaTimeout() {
+        if (timeoutTimer !== null) {
+          clearTimeout(timeoutTimer);
+        }
+      }
+      // schedule the media timeout
+      function scheduleMediaTimeout() {
+        cancelMediaTimeout();
+        timeoutTimer = setTimeout(onMediaTimeout, mediaTimeout);
+      }
+      // called when the media has timed out
+      function onMediaTimeout() {
+        try {
+          if (player.getState() === 'paused') {  // player is paused
+            return;
+          }
+        }catch (e) {
+          console.log("get player status exception:" + e);
+          return;
+        }
+        // reload the stream
+        player.pause();
+        player.play2();
+      }
+    </script>
+
+
     <script type="text/javascript">
       var SERVICE_CODE="";
       var API_KEY="";
@@ -189,14 +276,7 @@
           }
         } else if (null == live_url || /^rtmp:/.test(live_url) || /\.flv$/.test(live_url) || /\.m3u8/.test(live_url)) {
           if (live_url && detectFlashInstalled()) {
-            swfobject.embedSWF(
-              "swf/woan_wmp.swf" ,
-              "player" ,
-              width, 
-              height,
-              "10.1.0" ,
-              "swf/expressInstall.swf", 
-              {
+            var parameters = {
                 src: live_url,
                 autoPlay: true,
                 verbose: true,
@@ -205,7 +285,18 @@
                 controlBarAutoHide: "true",
                 controlBarPosition: "bottom",
                 plugin_hls: "swf/wmp_plugin_hls.swf"
-              } ,
+              };
+            if (/^rtmp:/.test(live_url) || /\.flv$/.test(live_url)) {
+               parameters = setRealMode(parameters);
+            }
+            swfobject.embedSWF(
+              "swf/woan_wmp.swf" ,
+              "player" ,
+              width, 
+              height,
+              "10.1.0" ,
+              "swf/expressInstall.swf", 
+              parameters,
               {
                 allowFullScreen: "true",
                 wmode: 'opaque' 
