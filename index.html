@@ -289,8 +289,11 @@
             var parameters = {
                 src: live_url,
                 autoPlay: true,
-                verbose: true,
-                liveBufferTime: 9,
+                optimizeBuffering: true,
+                initialBufferTime: 1,
+                minContinuousPlayback: 1,  // minimum playback time without pausing 
+                liveBufferTime: 1,  // buffer time for live content
+                streamType: 'live',
                 poster: "images/poster.png",
                 controlBarAutoHide: "true",
                 controlBarPosition: "bottom",
